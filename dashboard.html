@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Dentalis Sentry</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --navy: #0A1628; --navy2: #101f38; --card: #16263f;
+    --cyan: #00A8D8; --blue: #0048D8; --line: #223350;
+    --red: #ef4444; --orange: #f59e0b; --green: #22c55e; --txt: #e8eef7;
+    --dim: #8fa3bd;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; }
+  body { background: linear-gradient(160deg, var(--navy) 0%, #0d2440 60%, #0a2d55 100%); color: var(--txt); min-height: 100vh; padding: 14px 12px 40px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--cyan), var(--blue)); display: grid; place-items: center; font-size: 20px; }
+  h1 { font-size: 17px; } .sub { color: var(--dim); font-size: 11px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 8px; text-align: center; }
+  .num { font-size: 24px; font-weight: 700; }
+  .lbl { color: var(--dim); font-size: 10px; margin-top: 2px; }
+  .num.red { color: var(--red); } .num.orange { color: var(--orange); } .num.green { color: var(--green); }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-bottom: 12px; }
+  .panel h2 { font-size: 13px; color: var(--cyan); margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; gap: 8px; }
+  .row:last-child { border-bottom: none; }
+  .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--dim); font-size: 11px; }
+  .badge { border-radius: 8px; padding: 2px 8px; font-size: 11px; }
+  .b-err { background: #3a1d1d; color: #f87171; } .b-fat { background: #4a1111; color: #ef4444; font-weight: 700; }
+  a { color: var(--cyan); text-decoration: none; }
+  .btns { display: flex; gap: 6px; margin-top: 6px; }
+  .btn { flex: 1; border: none; border-radius: 10px; padding: 8px 0; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn.danger { background: var(--red); color: #fff; }
+  .btn.mute { background: #2a3a55; color: var(--txt); }
+  #spark { width: 100%; height: 90px; }
+  .dim { color: var(--dim); font-size: 11px; }
+  .loading { text-align: center; color: var(--dim); padding: 40px 0; }
+  .filters { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .filter { border: 1px solid var(--line); background: transparent; color: var(--dim); border-radius: 10px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+  .filter.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-inline-end: 5px; }
+  .pulse.bad { background: var(--red); }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div class="logo">🦷</div>
+    <div><h1>Dentalis Sentry</h1><div class="sub" id="sub">غرفة عمليات الأخطاء</div></div>
+  </div>
+  <div class="loading" id="loading">جارِ التحميل…</div>
+  <div id="root" style="display:none">
+    <div class="cards">
+      <div class="card"><div class="num red" id="c-open">—</div><div class="lbl">أخطاء مفتوحة</div></div>
+      <div class="card"><div class="num orange" id="c-fresh">—</div><div class="lbl">جديد 24 ساعة</div></div>
+      <div class="card"><div class="num green" id="c-rel">—</div><div class="lbl">أحدث إصدار</div></div>
+    </div>
+    <div class="panel">
+      <h2>📈 الأخطاء المفتوحة — 14 يومًا</h2>
+      <svg id="spark" viewBox="0 0 300 90" preserveAspectRatio="none"></svg>
+      <div class="dim" id="sparklbl"></div>
+    </div>
+    <div class="panel">
+      <h2>🔥 المسائل المفتوحة (error/fatal)</h2>
+      <div class="filters" id="filters"></div>
+      <div id="issues"></div>
+    </div>
+    <div class="panel">
+      <h2>🩺 صحة البوت</h2>
+      <div id="selfhealth"></div>
+    </div>
+  </div>
+<script>
+(function () {
+  const tg = window.Telegram && Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); const u = tg.initDataUnsafe && tg.initDataUnsafe.user; if (u && u.first_name) document.getElementById('sub').textContent = 'أهلاً ' + u.first_name; }
+  const AUTH = tg ? tg.initData : '';
+  const state = { issues: [], filter: 'all' };
+
+  async function api(path, body) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Init-Data': AUTH },
+      body: JSON.stringify(body || {}),
+    });
+    if (res.status === 401) { document.getElementById('loading').textContent = '⚠️ غير مصرح — افتح اللوحة من داخل تيليغرام (زر القائمة)'; throw new Error('unauthorized'); }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  }
+
+  function sparkline(points) {
+    const svg = document.getElementById('spark');
+    if (!points.length) { svg.innerHTML = '<text x="150" y="45" fill="#8fa3bd" font-size="11" text-anchor="middle">لا بيانات بعد — تتجمع يوميًا</text>'; return; }
+    const max = Math.max(1, ...points.map(p => p.v));
+    const w = 300, h = 80, step = points.length > 1 ? w / (points.length - 1) : w;
+    const xy = points.map((p, i) => [i * step, h - (p.v / max) * (h - 12) - 4]);
+    const line = xy.map(([x, y], i) => (i ? 'L' : 'M') + x.toFixed(1) + ',' + y.toFixed(1)).join(' ');
+    const area = line + ' L' + w + ',' + h + ' L0,' + h + ' Z';
+    svg.innerHTML =
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#00A8D8" stop-opacity=".55"/><stop offset="1" stop-color="#00A8D8" stop-opacity="0"/></linearGradient></defs>' +
+      '<path d="' + area + '" fill="url(#g)"/>' +
+      '<path d="' + line + '" fill="none" stroke="#00A8D8" stroke-width="2" stroke-linejoin="round"/>' +
+      xy.map(([x, y]) => '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.4" fill="#fff"/>').join('');
+    document.getElementById('sparklbl').textContent = points.map(p => p.d + ': ' + p.v).join(' · ');
+  }
+
+  function renderIssues() {
+    const box = document.getElementById('issues');
+    const list = state.issues.filter(i => state.filter === 'all' || (i.app || '').includes(state.filter));
+    box.innerHTML = list.length ? '' : '<div class="dim">لا مسائل مطابقة 🎉</div>';
+    for (const i of list) {
+      const div = document.createElement('div'); div.className = 'row';
+      div.innerHTML =
+        '<div class="title">' + (i.link ? '<a href="' + i.link + '">' : '') +
+        '<span class="badge ' + (i.level === 'fatal' ? 'b-fat' : 'b-err') + '">' + i.shortId + '</span> ' +
+        (i.app || '') + ' ' + i.title + (i.link ? '</a>' : '') +
+        '<div class="meta">' + i.count + '× · آخر ظهور ' + i.lastSeen + '</div></div>' +
+        '<div class="btns"><button class="btn danger" data-a="resolve" data-id="' + i.id + '">إغلاق</button>' +
+        '<button class="btn mute" data-a="mute">كتم</button></div>';
+      box.appendChild(div);
+    }
+    box.querySelectorAll('button[data-a]').forEach(b => b.onclick = async () => {
+      b.disabled = true; b.textContent = '…';
+      try { await api('/api/action', { action: b.dataset.a, issueId: b.dataset.id || null }); b.textContent = '✅'; }
+      catch (e) { b.textContent = '⚠️'; }
+    });
+  }
+
+  function renderFilters(apps) {
+    const box = document.getElementById('filters');
+    const mk = (key, label) => {
+      const b = document.createElement('button'); b.className = 'filter' + (state.filter === key ? ' on' : ''); b.textContent = label;
+      b.onclick = () => { state.filter = key; renderFilters(apps); renderIssues(); }; return b;
+    };
+    box.innerHTML = ''; box.appendChild(mk('all', 'الكل'));
+    for (const a of apps) box.appendChild(mk(a, a));
+  }
+
+  function renderSelf(h) {
+    document.getElementById('selfhealth').innerHTML =
+      '<div class="row"><span>الفحص الدوري</span><span><span class="pulse' + (h.pollMin > 30 ? ' bad' : '') + '"></span>' + (h.pollMin == null ? 'غير معروف' : 'قبل ' + h.pollMin + ' دقيقة') + '</span></div>' +
+      '<div class="row"><span>تقرير آخر</span><span>' + (h.digest || '—') + '</span></div>' +
+      '<div class="row"><span>المحادثات المشتركة بالبث</span><span>' + h.chats + '</span></div>' +
+      '<div class="row"><span>التنبيهات</span><span>' + (h.muted ? '🔇 مكتومة' : '🔊 مفعّلة') + '</span></div>';
+  }
+
+  (async () => {
+    try {
+      const d = await api('/api/summary');
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('root').style.display = 'block';
+      document.getElementById('c-open').textContent = d.open;
+      document.getElementById('c-fresh').textContent = d.fresh;
+      document.getElementById('c-rel').textContent = d.latestRelease || '—';
+      state.issues = d.issues || [];
+      const apps = [...new Set(state.issues.map(i => i.app).filter(Boolean))];
+      renderFilters(apps); renderIssues();
+      sparkline(d.spark || []);
+      renderSelf(d.self || {});
+    } catch (e) { /* loading text already set for 401 */ }
+  })();
+})();
+</script>
+</body>
+</html>
