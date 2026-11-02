@@ -77,10 +77,14 @@
   const tg = window.Telegram && Telegram.WebApp;
   if (tg) { tg.ready(); tg.expand(); const u = tg.initDataUnsafe && tg.initDataUnsafe.user; if (u && u.first_name) document.getElementById('sub').textContent = 'أهلاً ' + u.first_name; }
   const AUTH = tg ? tg.initData : '';
+  // The page is hosted OUTSIDE the functions domain (GitHub Pages — Supabase
+  // functions gateway force-serves text/plain + sandbox CSP on HTML, which
+  // rendered as raw source). API calls must therefore be ABSOLUTE.
+  const API = 'https://qvkfrjvvuhhmfdxmjvei.supabase.co/functions/v1/bot-dashboard';
   const state = { issues: [], filter: 'all' };
 
   async function api(path, body) {
-    const res = await fetch(path, {
+    const res = await fetch(API + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Init-Data': AUTH },
       body: JSON.stringify(body || {}),
@@ -160,8 +164,14 @@
       renderFilters(apps); renderIssues();
       sparkline(d.spark || []);
       renderSelf(d.self || {});
-    } catch (e) { /* loading text already set for 401 */ }
-  })();
+  } catch (e) {
+    // surface every failure inside the page — silent loading screens cost
+    // a debugging session once already (2026-11-02)
+    const l = document.getElementById('loading');
+    l.style.display = 'block';
+    l.textContent = '⚠️ ' + (e && e.message ? e.message : String(e));
+  }
+})();
 })();
 </script>
 </body>
