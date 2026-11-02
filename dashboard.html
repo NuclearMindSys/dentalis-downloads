@@ -166,10 +166,13 @@
       renderSelf(d.self || {});
   } catch (e) {
     // surface every failure inside the page — silent loading screens cost
-    // a debugging session once already (2026-11-02)
+    // a debugging session once already (2026-11-02); initLen helps tell
+    // "empty initData from client" apart from "signature rejected".
     const l = document.getElementById('loading');
     l.style.display = 'block';
-    l.textContent = '⚠️ ' + (e && e.message ? e.message : String(e));
+    const initLen = (tg ? tg.initData : '').length;
+    l.textContent = '⚠️ ' + (e && e.message ? e.message : String(e)) +
+      ' · initData len=' + initLen;
   }
 })();
 })();
