@@ -43,12 +43,15 @@
   .filter.on { background: var(--blue); border-color: var(--blue); color: #fff; }
   .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-inline-end: 5px; }
   .pulse.bad { background: var(--red); }
+  .refresh { margin-inline-start: auto; background: var(--card); border: 1px solid var(--line);
+    color: var(--cyan); border-radius: 10px; width: 36px; height: 36px; font-size: 18px; cursor: pointer; }
 </style>
 </head>
 <body>
   <div class="head">
     <div class="logo">🦷</div>
     <div><h1>Dentalis Sentry</h1><div class="sub" id="sub">غرفة عمليات الأخطاء</div></div>
+    <button class="refresh" id="refresh">⟳</button>
   </div>
   <div class="loading" id="loading">جارِ التحميل…</div>
   <div id="root" style="display:none">
@@ -81,12 +84,18 @@
   // functions gateway force-serves text/plain + sandbox CSP on HTML, which
   // rendered as raw source). API calls must therefore be ABSOLUTE.
   const API = 'https://qvkfrjvvuhhmfdxmjvei.supabase.co/functions/v1/bot-dashboard';
+  // Owner fallback for clients that don't populate initData: the ?k= param
+  // in the deep link (vault-held DASH_ACCESS_KEY).
+  const KEY = new URLSearchParams(location.search).get('k') || '';
   const state = { issues: [], filter: 'all' };
 
   async function api(path, body) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (AUTH) headers['X-Init-Data'] = AUTH;
+    if (KEY) headers['X-Access-Key'] = KEY;
     const res = await fetch(API + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Init-Data': AUTH },
+      headers,
       body: JSON.stringify(body || {}),
     });
     if (res.status === 401) { document.getElementById('loading').textContent = '⚠️ غير مصرح — افتح اللوحة من داخل تيليغرام (زر القائمة)'; throw new Error('unauthorized'); }
@@ -151,7 +160,11 @@
       '<div class="row"><span>التنبيهات</span><span>' + (h.muted ? '🔇 مكتومة' : '🔊 مفعّلة') + '</span></div>';
   }
 
-  (async () => {
+  let loading = false;
+  async function load() {
+    if (loading) return; loading = true;
+    const btn = document.getElementById('refresh');
+    if (btn) { btn.style.opacity = '.5'; btn.textContent = '⋯'; }
     try {
       const d = await api('/api/summary');
       document.getElementById('loading').style.display = 'none';
@@ -173,7 +186,14 @@
     const initLen = (tg ? tg.initData : '').length;
     l.textContent = '⚠️ ' + (e && e.message ? e.message : String(e)) +
       ' · initData len=' + initLen;
+  } finally {
+      loading = false;
+      if (btn) { btn.style.opacity = '1'; btn.textContent = '⟳'; }
+    }
   }
+  document.getElementById('refresh').onclick = load;
+  load();
+  setInterval(load, 60000);
 })();
 })();
 </script>
